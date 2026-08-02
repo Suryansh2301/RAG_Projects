@@ -1,0 +1,66 @@
+flowchart TD
+    Start([streamlit run app.py]) --> Init[Init session_state:<br/>ingested=False, chunks=None]
+    Init --> Upload{PDF uploaded?}
+    Upload -- No --> WaitUpload[Show: Upload a PDF]
+    WaitUpload --> Upload
+    Upload -- "Yes, not yet ingested" --> IngestCall[ingest_pdf bytes, filename]
+
+    subgraph S1["src/ingestion.py"]
+        IngestCall --> SaveFile[Save PDF to data/uploads/]
+        SaveFile --> LoadSplit[load_and_split_pdf:<br/>PyPDFLoader + RecursiveCharacterTextSplitter<br/>800 / 150, stamp source+page]
+        LoadSplit --> Dense[build_dense_index]
+        LoadSplit --> Sparse[build_sparse_index]
+        Dense --> Embed[get_embedding_model<br/>BAAI/bge-m3 via HF API]
+        Embed --> Chroma[(langchain-chroma<br/>persisted collection)]
+        Sparse --> Pickle[(BM25Retriever<br/>+ pickled chunks)]
+    end
+
+    Chroma --> SetIngested[session_state.ingested = True]
+    Pickle --> SetIngested
+    SetIngested --> ModeChoice{st.radio:<br/>Option A or B?}
+
+    ModeChoice -- "A: Q&A" --> QAInput[User types question,<br/>clicks Get Answer]
+    ModeChoice -- "B: Summary" --> SummaryClick[User clicks<br/>Generate Executive Summary]
+
+    %% ---------------- OPTION A ----------------
+    QAInput --> BuildQA[build_qa_chain]
+
+    subgraph S2["src/retriever.py"]
+        BuildQA --> GetRR[get_reranked_retriever<br/>returns a RunnableLambda]
+        GetRR --> Hybrid[get_hybrid_retriever:<br/>EnsembleRetriever langchain_classic<br/>BM25 top10 + Chroma top10<br/>RRF 40/60]
+    end
+
+    subgraph S3["src/chain.py — LCEL RAG chain"]
+        Hybrid --> Invoke1[chain.invoke question]
+        Invoke1 --> RL1[RunnableLambda:<br/>retriever.invoke question]
+        RL1 --> Rerank[rerank_with_cross_encoder<br/>InferenceClient.post bge-reranker-base<br/>keep top 3]
+        Rerank --> Format[format_docs_with_citations<br/>context string + citation list]
+        Format --> Parallel["RunnableParallel:<br/>answer = qa_prompt | llm | StrOutputParser<br/>citations = passthrough"]
+        Parallel --> LLMCall[ChatHuggingFace.invoke<br/>Llama-3.1-8B / Qwen2.5-7B]
+    end
+
+    LLMCall --> ShowAnswer[Render: answer + citations]
+
+    %% ---------------- OPTION B ----------------
+    SummaryClick --> BuildSum[build_summary_chain]
+
+    subgraph S4["src/chain.py — Summary chain"]
+        BuildSum --> Invoke2[chain.invoke chunks]
+        Invoke2 --> RL2[RunnableLambda: _route]
+        RL2 --> TokCount[_count_tokens full_text<br/>tiktoken cl100k_base]
+        TokCount --> LenCheck{token_count ><br/>10,000?}
+        LenCheck -- Yes --> Group[_group_chunks_into_sections<br/>~3000 tokens each]
+        Group --> MapBatch[map_chain.batch sections<br/>prompt | llm | parser]
+        MapBatch --> Reduce[reduce_chain.invoke<br/>combine into one summary]
+        LenCheck -- No --> Stuff[stuff_chain.invoke<br/>prompt | llm | parser, one call]
+    end
+
+    Reduce --> ShowSummary[Render: summary<br/>+ strategy_used + token_count]
+    Stuff --> ShowSummary
+
+    %% ---------------- RESET ----------------
+    ShowAnswer --> ResetCheck{Reset clicked?}
+    ShowSummary --> ResetCheck
+    ResetCheck -- Yes --> ClearState[Clear session_state]
+    ClearState --> Upload
+    ResetCheck -- No --> ModeChoice

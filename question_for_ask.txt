@@ -1,0 +1,61 @@
+# from langchain_huggingface import HuggingFaceEndpointEmbeddings
+
+
+    # HF_TOKEN,
+    # @lru_cache(maxsize=1)
+# def get_embedding_model() -> HuggingFaceEndpointEmbeddings:
+#     """Cached BAAI/bge-m3 embedding model, called via the HF Inference API."""
+#     return HuggingFaceEndpointEmbeddings(
+#         model=EMBEDDING_MODEL_ID,
+#         huggingfacehub_api_token=HF_TOKEN,
+#     )
+
+
+
+
+📘 General Understanding
+What problem in text generation does CTRL aim to solve?
+
+How does CTRL differ from traditional language models like GPT in terms of conditioning?
+
+Why are control codes considered more explicit than prompts for guiding generation?
+
+🔧 Technical Details
+How is the distribution 
+𝑝
+(
+𝑥
+∣
+𝑐
+)
+ modeled in CTRL compared to standard 
+𝑝
+(
+𝑥
+)
+?
+
+What role do domain control codes play during training and inference?
+
+How does CTRL handle sequence lengths and vocabulary size differently from other models?
+
+📊 Data & Training
+What types of datasets were used to train CTRL, and how were control codes derived from them?
+
+How does CTRL leverage URLs and subdomains as control codes?
+
+Why was Adagrad chosen over Adam for training the full model?
+
+🎛 Controllability
+How can control codes be combined to achieve finer-grained control over generation?
+
+Can you give an example of how CTRL uses control codes for task-specific behaviors like translation or question answering?
+
+How does CTRL enable zero-shot code-mixing across domains and tasks?
+
+🔍 Applications & Implications
+How can CTRL be used for source attribution in large datasets?
+
+What are the potential ethical implications of controllable generation?
+
+How might CTRL’s approach to control codes influence future research in conditional generation?
