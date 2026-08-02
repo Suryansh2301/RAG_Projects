@@ -63,7 +63,7 @@ pip install -r requirements.txt
 
 ## 5. Setup
 ```bash
-git clone <your-repo>
+git clone <(https://github.com/Suryansh2301/RAG_Projects.git)>
 cd rag-copilot
 python -m venv venv
 source .venv/bin/activate.ps1        # Windows: venv\Scripts\activate
