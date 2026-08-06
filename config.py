@@ -48,7 +48,7 @@ TOP_K_DENSE = 4 # or 10
 TOP_K_SPARSE = 4 # or 10
 RRF_WEIGHT_BM25 = 0.4
 RRF_WEIGHT_DENSE = 0.6
-RERANK_MODEL_ID = "BAAI/bge-reranker-small"  # or "BAAI/bge-reranker-base"
+RERANK_MODEL_ID = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # or "BAAI/bge-reranker-base"
 TOP_N_RERANKED = 2 # or 3, but 2 is faster and still high-precision
 
 # ---------------------------------------------------------------------------

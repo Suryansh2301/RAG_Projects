@@ -77,7 +77,7 @@ def build_dense_index(chunks: List[Document]) -> Chroma:
     if not chunks:
         raise ValueError("The chunk list is empty. Nothing to index.")
 
-    BATCH_SIZE = 50       # Safely below the 100 requests per minute limit
+    BATCH_SIZE = 80 # or 50       # Safely below the 100 requests per minute limit
     DELAY_SECONDS = 60    # Wait 1 minute between API calls
     
     embeddings_model = get_embedding_model()

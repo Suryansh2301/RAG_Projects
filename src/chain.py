@@ -15,7 +15,7 @@ Everything here is a Runnable, so app.py only ever calls `.invoke(...)`.
 
 from functools import lru_cache
 from typing import List
-
+import time
 import tiktoken
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
@@ -34,31 +34,8 @@ from src.retriever import get_reranked_retriever
 
 _ENCODER = tiktoken.get_encoding("cl100k_base")
 
-# Dynamic Temperature Function
 
-def get_temperature(question: str):
-    question = question.lower()
-
-    if any(word in question for word in [
-        "summarize",
-        "summary",
-        "overview"
-    ]):
-        return 0.1
-
-    if any(word in question for word in [
-        "explain",
-        "why",
-        "how"
-    ]):
-        return 0.2
-
-    return 0.0
-
-
-
-
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=2)
 def get_llm(temperature: float) -> ChatGoogleGenerativeAI:
     """Cached Google Gemini chat LLM (default: gemini-3.5-flash-lite or gemini-3.6-flash)."""
     return ChatGoogleGenerativeAI(
@@ -145,7 +122,7 @@ def build_qa_chain():
         retrieve+rerank -> format+cite -> RunnableParallel(answer=prompt|llm|parser, citations=passthrough)
     """
     retriever = get_reranked_retriever()
-    llm = get_llm()
+    llm = get_llm(0.0)
 
     def _retrieve_and_format(inputs: dict) -> dict:
         docs = retriever.invoke(inputs["question"])
@@ -250,32 +227,48 @@ reduce_prompt = ChatPromptTemplate.from_messages([
     (
         "human",
         """
-You are combining individual section summaries of a larger document into a single cohesive Executive Summary.
+You are combining individual section summaries into a single comprehensive report.
 
-Consolidate the following intermediate summaries:
+Use ONLY the information provided in the intermediate summaries.
 
+Do not hallucinate.
+Do not repeat information.
+Merge duplicate ideas.
+Write concise, professional Markdown.
+
+Intermediate Summaries:
 {summaries}
 
-Generate a comprehensive final output using the layout requested below. Ensure smooth transitions.
+Generate the report using EXACTLY the following format.
 
 # Executive Summary
-(4–6 paragraphs summarizing the entire document context)
+Write 2–3 concise paragraphs (maximum 250 words).
 
 # Key Contributions
+- 4–6 bullet points
 
 # Important Concepts
+- 5–8 bullet points with short explanations
 
 # Methodology
+- 4–6 bullet points
 
 # Key Findings
+- 5–8 bullet points
 
 # Advantages
+- 3–5 bullet points
 
-# Limitations (if available)
+# Limitations
+- 3–5 bullet points
+- If not mentioned, write "Not specified in the document."
 
-# Future Work (if available)
+# Future Work
+- 3–5 bullet points
+- If not mentioned, write "Not specified in the document."
 
 # Conclusion
+Write one concise paragraph (maximum 120 words).
 """,
     ),
 ])
@@ -286,7 +279,7 @@ def _route_summary(chunks: List[Document]) -> dict:
     Dynamic routing logic based on total context token counts.
     Routes between simple Stuffing and Map-Reduce workflows.
     """
-    llm = get_llm()
+    llm = get_llm(0.1)
     full_text = "\n\n".join([doc.page_content for doc in chunks])
     total_tokens = len(_ENCODER.encode(full_text))
 
@@ -306,8 +299,11 @@ def _route_summary(chunks: List[Document]) -> dict:
         map_chain = map_prompt | llm | StrOutputParser()
         intermediate_summaries = []
         for chunk in chunks:
-            out = map_chain.invoke({"section": chunk.page_content})
-            intermediate_summaries.append(out)
+                out = map_chain.invoke({"section": chunk.page_content})
+                intermediate_summaries.append(out)
+
+    # Stay below Gemini free-tier limit
+                time.sleep(5)
 
         # Step 2: Reduce (Synthesize intermediate summaries into one)
         combined_summaries_text = "\n\n=== Section Summary ===\n\n".join(intermediate_summaries)
