@@ -54,7 +54,7 @@ if st.session_state.ingested:
     if mode.startswith("Option A"):
         query = st.text_input("Ask a question about the document")
         if st.button("Get Answer") and query:
-            with st.spinner("Hybrid search -> RRF fusion -> cross-encoder re-rank -> LLM..."):
+            with st.spinner("Generating"):
                 qa_chain = build_qa_chain()
                 result = qa_chain.invoke({"question": query})
 
@@ -68,7 +68,7 @@ if st.session_state.ingested:
     # -- Option B: Executive Summarization (LCEL Map-Reduce / Stuffing) ----
     else:
         if st.button("Generate Executive Summary"):
-            with st.spinner("Deciding strategy (Map-Reduce vs Stuffing) and summarizing..."):
+            with st.spinner("Generating executive summary..."):
                 summary_chain = build_summary_chain()
                 result = summary_chain.invoke(st.session_state.chunks)
 

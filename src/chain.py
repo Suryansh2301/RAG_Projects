@@ -26,7 +26,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from config import (
     GOOGLE_API_KEY,
     LLM_MODEL_ID,
-    LLM_TEMPERATURE,
+    # LLM_TEMPERATURE,
     LLM_MAX_NEW_TOKENS,
     LONG_DOC_TOKEN_THRESHOLD,
 )
@@ -34,14 +34,37 @@ from src.retriever import get_reranked_retriever
 
 _ENCODER = tiktoken.get_encoding("cl100k_base")
 
+# Dynamic Temperature Function
+
+def get_temperature(question: str):
+    question = question.lower()
+
+    if any(word in question for word in [
+        "summarize",
+        "summary",
+        "overview"
+    ]):
+        return 0.1
+
+    if any(word in question for word in [
+        "explain",
+        "why",
+        "how"
+    ]):
+        return 0.2
+
+    return 0.0
+
+
+
 
 @lru_cache(maxsize=1)
-def get_llm() -> ChatGoogleGenerativeAI:
+def get_llm(temperature: float) -> ChatGoogleGenerativeAI:
     """Cached Google Gemini chat LLM (default: gemini-3.5-flash-lite or gemini-3.6-flash)."""
     return ChatGoogleGenerativeAI(
         model=LLM_MODEL_ID,              
         google_api_key=GOOGLE_API_KEY,    
-        temperature=LLM_TEMPERATURE,
+        temperature=temperature,
         max_output_tokens=LLM_MAX_NEW_TOKENS,  
         max_retries=2,
     )
