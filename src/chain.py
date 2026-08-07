@@ -2,15 +2,6 @@
 src/chain.py
 ------------
 LCEL RAG chain & source citation formatter.
-
-Owns the LLM singleton plus THREE LangChain Expression Language (LCEL)
-Runnables, all built with the `|` pipe operator:
-
-1. build_qa_chain()      -> Option A: retrieve -> format+cite -> prompt -> LLM
-2. build_summary_chain() -> Option B: token-length route -> Stuffing | Map-Reduce
-3. get_llm()             -> shared ChatGoogleGenerativeAI singleton used by both
-
-Everything here is a Runnable, so app.py only ever calls `.invoke(...)`.
 """
 
 from functools import lru_cache
@@ -21,12 +12,11 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableParallel
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 
 from config import (
-    GOOGLE_API_KEY,
+    HF_TOKEN,
     LLM_MODEL_ID,
-    # LLM_TEMPERATURE,
     LLM_MAX_NEW_TOKENS,
     LONG_DOC_TOKEN_THRESHOLD,
 )
@@ -36,23 +26,34 @@ _ENCODER = tiktoken.get_encoding("cl100k_base")
 
 
 @lru_cache(maxsize=2)
-def get_llm(temperature: float) -> ChatGoogleGenerativeAI:
-    """Cached Google Gemini chat LLM (default: gemini-3.5-flash-lite or gemini-3.6-flash)."""
-    return ChatGoogleGenerativeAI(
-        model=LLM_MODEL_ID,              
-        google_api_key=GOOGLE_API_KEY,    
+def get_llm(temperature: float) -> ChatHuggingFace:
+    """Cached Hugging Face chat LLM served via the HF Inference API (default: Qwen/Qwen3-8B)."""
+    endpoint = HuggingFaceEndpoint(
+        repo_id=LLM_MODEL_ID,
+        huggingfacehub_api_token=HF_TOKEN,
         temperature=temperature,
-        max_output_tokens=LLM_MAX_NEW_TOKENS,  
-        max_retries=2,
+        max_new_tokens=LLM_MAX_NEW_TOKENS,
     )
+    return ChatHuggingFace(llm=endpoint)
+
+
+# --- Gemini version (kept for reference / easy rollback) -------------------
+# from langchain_google_genai import ChatGoogleGenerativeAI
+# from config import GOOGLE_API_KEY
+#
+# @lru_cache(maxsize=2)
+# def get_llm(temperature: float) -> ChatGoogleGenerativeAI:
+#     """Cached Google Gemini chat LLM (default: gemini-3.5-flash-lite or gemini-3.6-flash)."""
+#     return ChatGoogleGenerativeAI(
+#         model=LLM_MODEL_ID,
+#         google_api_key=GOOGLE_API_KEY,
+#         temperature=temperature,
+#         max_output_tokens=LLM_MAX_NEW_TOKENS,
+#         max_retries=2,
+#     )
 
 
 def format_docs_with_citations(docs: List[Document]):
-    """
-    Source citation formatter: turns retrieved chunks into a single
-    prompt-ready context string, plus a structured citation list the UI
-    renders as "Source: filename.pdf, page 4".
-    """
     blocks, citations = [], []
     for i, doc in enumerate(docs, start=1):
         source = doc.metadata.get("source", "unknown")
@@ -70,18 +71,18 @@ Your task is to answer the user's question ONLY using the retrieved document con
 
 Instructions:
 
-• Base every statement on the retrieved context.
-• You may combine information from multiple retrieved chunks to produce a complete answer.
-• Do NOT use outside knowledge.
-• Do NOT hallucinate.
-• Do NOT invent facts.
-• Do NOT invent citations.
-• Answer confidently whenever the answer is supported by the retrieved context.
-• Do NOT say "The context does not explicitly mention..." if the answer is clearly present.
-• Only state that the information is unavailable if the retrieved context genuinely lacks the answer.
-• Remove repeated information.
-• Write naturally as if explaining the document.
-• Use Markdown formatting.
+- Base every statement on the retrieved context.
+- You may combine information from multiple retrieved chunks to produce a complete answer.
+- Do NOT use outside knowledge.
+- Do NOT hallucinate.
+- Do NOT invent facts.
+- Do NOT invent citations.
+- Answer confidently whenever the answer is supported by the retrieved context.
+- Do NOT say "The context does not explicitly mention..." if the answer is clearly present.
+- Only state that the information is unavailable if the retrieved context genuinely lacks the answer.
+- Remove repeated information.
+- Write naturally as if explaining the document.
+- Use Markdown formatting.
 
 Response Format
 
@@ -89,7 +90,7 @@ Response Format
 (2–6 concise paragraphs)
 
 ### Key Points
-• Bullet points if appropriate
+- Bullet points if appropriate
 
 ### Sources
 (Page numbers only)
@@ -117,10 +118,6 @@ ask follow-up questions.
 
 
 def build_qa_chain():
-    """
-    Builds the full Option A Runnable using LCEL:
-        retrieve+rerank -> format+cite -> RunnableParallel(answer=prompt|llm|parser, citations=passthrough)
-    """
     retriever = get_reranked_retriever()
     llm = get_llm(0.0)
 
@@ -149,15 +146,15 @@ Summarize ONLY the provided document.
 
 Instructions:
 
-• Do not use outside knowledge.
-• Preserve important technical terms.
-• Remove repetition.
-• Merge similar ideas.
-• Keep the author's intent.
-• Do not hallucinate.
-• Mention limitations if present.
-• Mention future work if present.
-• Use Markdown headings.
+- Do not use outside knowledge.
+- Preserve important technical terms.
+- Remove repetition.
+- Merge similar ideas.
+- Keep the author's intent.
+- Do not hallucinate.
+- Mention limitations if present.
+- Mention future work if present.
+- Use Markdown headings.
 """
 
 stuff_prompt = ChatPromptTemplate.from_messages([
@@ -204,13 +201,13 @@ Summarize the following document section.
 
 Include:
 
-• Main idea
-• Important technical concepts
-• Important facts
-• Important numbers
-• Algorithms
-• Experimental findings
-• Conclusions
+- Main idea
+- Important technical concepts
+- Important facts
+- Important numbers
+- Algorithms
+- Experimental findings
+- Conclusions
 
 Do not omit important information.
 
@@ -221,7 +218,6 @@ Section:
     ),
 ])
 
-# Re-constructed the broken prompt from the cut-off
 reduce_prompt = ChatPromptTemplate.from_messages([
     ("system", SUMMARY_SYSTEM_PROMPT),
     (
@@ -275,15 +271,10 @@ Write one concise paragraph (maximum 120 words).
 
 
 def _route_summary(chunks: List[Document]) -> dict:
-    """
-    Dynamic routing logic based on total context token counts.
-    Routes between simple Stuffing and Map-Reduce workflows.
-    """
     llm = get_llm(0.1)
     full_text = "\n\n".join([doc.page_content for doc in chunks])
     total_tokens = len(_ENCODER.encode(full_text))
 
-    # --- Strategy 1: Stuffing (For shorter documents) ---
     if total_tokens <= LONG_DOC_TOKEN_THRESHOLD:
         stuff_chain = stuff_prompt | llm | StrOutputParser()
         summary = stuff_chain.invoke({"document": full_text})
@@ -292,20 +283,15 @@ def _route_summary(chunks: List[Document]) -> dict:
             "token_count": total_tokens,
             "summary": summary,
         }
-
-    # --- Strategy 2: Map-Reduce (For longer documents exceeding threshold) ---
     else:
-        # Step 1: Map (Summarize every individual chunk)
         map_chain = map_prompt | llm | StrOutputParser()
         intermediate_summaries = []
         for chunk in chunks:
-                out = map_chain.invoke({"section": chunk.page_content})
-                intermediate_summaries.append(out)
+            out = map_chain.invoke({"section": chunk.page_content})
+            intermediate_summaries.append(out)
+            # Stay below the HF Inference API free-tier rate limit
+            time.sleep(5)
 
-    # Stay below Gemini free-tier limit
-                time.sleep(5)
-
-        # Step 2: Reduce (Synthesize intermediate summaries into one)
         combined_summaries_text = "\n\n=== Section Summary ===\n\n".join(intermediate_summaries)
         reduce_chain = reduce_prompt | llm | StrOutputParser()
         final_summary = reduce_chain.invoke({"summaries": combined_summaries_text})
@@ -318,9 +304,4 @@ def _route_summary(chunks: List[Document]) -> dict:
 
 
 def build_summary_chain():
-    """
-    Builds the Option B Runnable using an LCEL RunnableLambda routing engine.
-    Usage: build_summary_chain().invoke(chunks)
-        -> {"strategy_used": "...", "token_count": 1234, "summary": "..."}
-    """
     return RunnableLambda(_route_summary)

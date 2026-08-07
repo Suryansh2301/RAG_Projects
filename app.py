@@ -29,6 +29,8 @@ if "chunks" not in st.session_state:
     st.session_state.chunks = None
 if "filename" not in st.session_state:
     st.session_state.filename = None
+if "qa_chain" not in st.session_state:
+    st.session_state.qa_chain = None
 
 # 1. Ingestion
 st.header("1. Upload a document")
@@ -55,8 +57,9 @@ if st.session_state.ingested:
         query = st.text_input("Ask a question about the document")
         if st.button("Get Answer") and query:
             with st.spinner("Generating"):
-                qa_chain = build_qa_chain()
-                result = qa_chain.invoke({"question": query})
+                if st.session_state.qa_chain is None:
+                    st.session_state.qa_chain = build_qa_chain()
+                result = st.session_state.qa_chain.invoke({"question": query})
 
             st.subheader("💡 Generated Answer")
             st.write(result["answer"])
@@ -84,7 +87,7 @@ if st.session_state.ingested:
         st.session_state.ingested = False
         st.session_state.chunks = None
         st.session_state.filename = None
+        st.session_state.qa_chain = None
         st.rerun()
 else:
     st.info("Upload a PDF above to get started.")
-
